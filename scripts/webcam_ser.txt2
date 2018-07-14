@@ -1,0 +1,74 @@
+#!/usr/bin/env python2
+#-*-coding:utf-8-*-
+from flask import Flask
+import time
+from flask import render_template
+from flask import request
+import base64
+from PIL import Image
+from io import StringIO, BytesIO
+import robo_talker
+import cv2
+import numpy as np
+from multiprocessing import Process
+from sensor_msgs.msg import Image
+
+def extract_face_features(gray_face, wd=96, ht=96):
+    gray_face = cv2.resize(gray_face, (wd, ht))
+    gray_face = cv2.equalizeHist(gray_face)
+    gray_face = cv2.GaussianBlur(gray_face, ksize=(3, 3),
+                                    sigmaX=0, sigmaY=0)
+
+    gray_face = np.array(gray_face, dtype=np.float64)
+    gray_face_vector = gray_face.reshape(wd * ht, order='C')
+    return gray_face_vector
+
+app = Flask(__name__)
+
+@app.route('/')
+def webcam():
+    return render_template('index.html')
+
+@app.route('/upload', methods=['POST','GET'])
+def upload():
+    print('getting data from web.')
+    if request.method == 'POST':
+        image_b64 = request.form['img']
+        robo_talker.talker(image_b64)
+        imgdata = base64.b64decode(image_b64)
+        with open('org_img.jpg', 'wb') as f:
+            f.write(imgdata)
+        imgdata = cv2.imread('org_img.jpg')
+
+        imgdata = cv2.cvtColor(imgdata, cv2.COLOR_BGR2GRAY) 
+        face_cascade = cv2.CascadeClassifier(r'./haarcascade_frontalface_default.xml')
+        faces = face_cascade.detectMultiScale(
+                                            imgdata,
+                                            scaleFactor=1.15,
+                                            minNeighbors=5,
+                                            minSize=(5, 5)  # ,
+                                                    # flags=cv2.CV_HAAR_SCALE_IMAGE
+                                                        )
+        for i, (x, y, w, h) in enumerate(faces):
+            cv2.rectangle(imgdata, (x, y), (x + w, y + w), (255, 0, 0), 2)
+            gray_face = imgdata[y:y+h, x:x+w]
+            gray_face_vector = extract_face_features(gray_face)
+            gray_face = gray_face_vector.reshape((96, 96))
+            cv2.imwrite('./gray_face.jpg', gray_face)
+			
+
+        time.sleep(3)
+        if robo_talker.MSG != None:
+            result = robo_talker.MSG
+            robo_talker.MSG = None 
+            return "result:" + result 
+        else:
+             return "无法识别"
+        #with open('pic.jpg', 'wb') as f:
+        #    f.write(imgdata)
+    #return render_template('index.html')
+if __name__ == '__main__':
+    p = Process(target=robo_talker.init,args=())
+    p.start()
+    app.run(host='0.0.0.0', port=7777, ssl_context='adhoc')
+    p.join()

@@ -1,2 +1,2 @@
-# robo_eyes
-ros+人脸识别
+# RoboEyes
+A face recognition project for ROS.
